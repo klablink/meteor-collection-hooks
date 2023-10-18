@@ -4,7 +4,6 @@
 ![Code lint](https://github.com/Meteor-Community-Packages/meteor-collection-hooks/workflows/Code%20lint/badge.svg)
 ![CodeQL Analysis](https://github.com/Meteor-Community-Packages/meteor-collection-hooks/workflows/CodeQL/badge.svg)
 
-
 Extends Mongo.Collection with `before`/`after` hooks for `insert`, `update`, `remove`, `find`, and `findOne`.
 
 Works across client, server or a mix. Also works when a client initiates a collection method and the server runs the hook, all while respecting the collection validators (allow/deny).
