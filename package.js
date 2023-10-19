@@ -38,9 +38,12 @@ Package.onTest(function (api) {
     'accounts-base',
     'accounts-password',
     'mongo',
-    'tinytest',
     'test-helpers',
-    'ecmascript'
+    'ecmascript',
+    'autopublish',
+    'insecure',
+    'meteortesting:mocha',
+    'jquery'
   ])
 
   api.mainModule('tests/client/main.js', 'client')

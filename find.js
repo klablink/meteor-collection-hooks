@@ -1,6 +1,6 @@
 import { CollectionHooks } from './collection-hooks'
 
-CollectionHooks.defineAdvice('find', function (userId, _super, instance, aspects, getTransform, args, suppressAspects) {
+const findFn = function (userId, _super, instance, aspects, getTransform, args, suppressAspects) {
   const ctx = { context: this, _super, args }
   const selector = CollectionHooks.normalizeSelector(instance._getFindSelector(args))
   const options = instance._getFindOptions(args)
@@ -8,7 +8,8 @@ CollectionHooks.defineAdvice('find', function (userId, _super, instance, aspects
   // before
   if (!suppressAspects) {
     aspects.before.forEach((o) => {
-      const r = o.aspect.call(ctx, userId, selector, options)
+      let r = o.aspect.call(ctx, userId, selector, options)
+      r = CollectionHooks.normalizeResult(r)
       if (r === false) abort = true
     })
 
@@ -18,7 +19,7 @@ CollectionHooks.defineAdvice('find', function (userId, _super, instance, aspects
   const after = (cursor) => {
     if (!suppressAspects) {
       aspects.after.forEach((o) => {
-        o.aspect.call(ctx, userId, selector, options, cursor)
+        CollectionHooks.normalizeResult(o.aspect.call(ctx, userId, selector, options, cursor))
       })
     }
   }
@@ -27,4 +28,6 @@ CollectionHooks.defineAdvice('find', function (userId, _super, instance, aspects
   after(ret)
 
   return ret
-})
+}
+
+CollectionHooks.defineAdvice('find', findFn)

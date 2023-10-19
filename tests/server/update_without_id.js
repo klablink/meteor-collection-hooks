@@ -1,8 +1,8 @@
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 
-Tinytest.addAsync('update - server collection documents should have extra properties added before and after being updated despite selector not being _id', function (test, next) {
+it('update - server collection documents should have extra properties added before and after being updated despite selector not being _id', function (done) {
   const collection = new Mongo.Collection(null)
 
   let retries = 0
@@ -15,13 +15,13 @@ Tinytest.addAsync('update - server collection documents should have extra proper
     }, 100)
   }
 
-  collection.before.update(function (userId, doc, fieldNames, modifier, options) {
+  collection.before[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
     if (fieldNames.includes('test')) {
       modifier.$set.before_update_value = true
     }
   })
 
-  collection.after.update(function (userId, doc, fieldNames, modifier, options) {
+  collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
     if (fieldNames.includes('test')) {
       collection.update({ _id: doc._id }, { $set: { after_update_value: true } })
     }
@@ -41,8 +41,8 @@ Tinytest.addAsync('update - server collection documents should have extra proper
         }, function (r) {
           return r > 0
         }, function (r) {
-          test.equal(r, 3, 'number of docs found should be 3')
-          next()
+          assert.equal(r, 3, 'number of docs found should be 3')
+          done()
         })
       })
     })

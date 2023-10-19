@@ -1,8 +1,11 @@
+/* eslint-env mocha */
+
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 import { InsecureLogin } from './insecure_login'
 import { CollectionHooks } from 'meteor/matb33:collection-hooks'
+import { Mocha } from 'meteor/meteortesting:mocha-core'
 
 const collection = new Mongo.Collection('test_collection_for_find_findone_userid')
 
@@ -38,7 +41,7 @@ collection.after.find(function (userId, selector, options, result) {
   }
 })
 
-collection.before.findOne(function (userId, selector, options) {
+collection.before[Meteor.isFibersDisabled ? 'findOneAsync' : 'findOne'](function (userId, selector, options) {
   if (options && options.test) { // ignore other calls to find (caused by insert/update)
     beforeFindOneUserId = userId
 
@@ -48,7 +51,7 @@ collection.before.findOne(function (userId, selector, options) {
   }
 })
 
-collection.after.findOne(function (userId, selector, options, result) {
+collection.after[Meteor.isFibersDisabled ? 'findOneAsync' : 'findOne'](function (userId, selector, options, result) {
   if (options && options.test) { // ignore other calls to find (caused by insert/update)
     afterFindOneUserId = userId
 
@@ -62,11 +65,13 @@ if (Meteor.isServer) {
   let serverTestsAdded = false
   let publishContext = null
 
-  Tinytest.add('general - isWithinPublish is false outside of publish function', function (test) {
-    test.equal(CollectionHooks.isWithinPublish(), false)
+  describe('find findone userid', function () {
+    it('general - isWithinPublish is false outside of publish function', function () {
+      assert.equal(CollectionHooks.isWithinPublish(), false)
+    })
   })
 
-  Meteor.publish('test_publish_for_find_findone_userid', function () {
+  Meteor.publish('test_publish_for_find_findone_userid', async function () {
     // Reset test values on each connection
     publishContext = null
 
@@ -85,35 +90,41 @@ if (Meteor.isServer) {
 
     // Trigger hooks
     collection.find({}, { test: 1 })
-    collection.findOne({}, { test: 1 })
+    await collection.findOneAsync({}, { test: 1 })
 
     if (!serverTestsAdded) {
+      const Test = Mocha.Test
+      const Suite = Mocha.Suite
       serverTestsAdded = true
 
       // Our monkey-patch of Meteor.publish should preserve the value of 'this'.
-      Tinytest.add('general - this (context) preserved in publish functions', function (test) {
-        test.isTrue(publishContext && publishContext.userId)
-      })
+      const testRunner = new Mocha()
+      const suite = Suite.create(testRunner.suite, 'find findone userid')
+      suite.addTest(new Test('general - this (context) preserved in publish functions', function () {
+        assert.isTrue(publishContext && !!publishContext.userId)
+      }))
 
-      Tinytest.add('find - userId available to before find hook when within publish context', function (test) {
-        test.notEqual(beforeFindUserId, null)
-        test.equal(beforeFindWithinPublish, true)
-      })
+      suite.addTest(new Test('find - userId available to before find hook when within publish context', function () {
+        assert.notEqual(beforeFindUserId, null)
+        assert.equal(beforeFindWithinPublish, true)
+      }))
 
-      Tinytest.add('find - userId available to after find hook when within publish context', function (test) {
-        test.notEqual(afterFindUserId, null)
-        test.equal(afterFindWithinPublish, true)
-      })
+      suite.addTest(new Test('find - userId available to after find hook when within publish context', function () {
+        assert.notEqual(afterFindUserId, null)
+        assert.equal(afterFindWithinPublish, true)
+      }))
 
-      Tinytest.add('findone - userId available to before findOne hook when within publish context', function (test) {
-        test.notEqual(beforeFindOneUserId, null)
-        test.equal(beforeFindOneWithinPublish, true)
-      })
+      suite.addTest(new Test('findone - userId available to before findOne hook when within publish context', function () {
+        assert.notEqual(beforeFindOneUserId, null)
+        assert.equal(beforeFindOneWithinPublish, true)
+      }))
 
-      Tinytest.add('findone - userId available to after findOne hook when within publish context', function (test) {
-        test.notEqual(afterFindOneUserId, null)
-        test.equal(afterFindOneWithinPublish, true)
-      })
+      suite.addTest(new Test('findone - userId available to after findOne hook when within publish context', function () {
+        assert.notEqual(afterFindOneUserId, null)
+        assert.equal(afterFindOneWithinPublish, true)
+      }))
+
+      testRunner.run()
     }
   })
 }
@@ -126,52 +137,39 @@ if (Meteor.isClient) {
     afterFindOneUserId = null
   }
 
-  const withLogin = (testFunc) => {
-    return function (...args) {
-      const wrapper = (cb) => {
-        InsecureLogin.ready(() => {
-          cleanup()
-          try {
-            const result = testFunc.apply(this, args)
-            cb(null, result)
-          } catch (error) {
-            cb(error)
-          } finally {
-            cleanup()
-          }
-        })
-      }
-
-      return Meteor.wrapAsync(wrapper) // Don't run this function, just wrap it
-    }
-  }
-
   // Run client tests.
-  // TODO: Somehow, Tinytest.add / addAsync doesn't work inside InsecureLogin.ready().
+  // TODO: Somehow, it / addAsync doesn't work inside InsecureLogin.ready().
   // Hence, we add these tests wrapped synchronously with a login hook.
   // Ideally, this function should wrap the test functions.
-  Tinytest.add('find - userId available to before find hook', withLogin(function (test) {
-    collection.find({}, { test: 1 })
-    test.notEqual(beforeFindUserId, null)
-  }))
 
-  Tinytest.add('find - userId available to after find hook', withLogin(function (test) {
-    collection.find({}, { test: 1 })
-    test.notEqual(afterFindUserId, null)
-  }))
+  describe('find findone userid', function () {
+    before(async function () {
+      await InsecureLogin.ready()
+      Meteor.subscribe('test_publish_for_find_findone_userid')
+    })
 
-  Tinytest.add('findone - userId available to before findOne hook', withLogin(function (test) {
-    collection.findOne({}, { test: 1 })
-    test.notEqual(beforeFindOneUserId, null)
-  }))
+    beforeEach(function () {
+      cleanup()
+    })
 
-  Tinytest.add('findone - userId available to after findOne hook', withLogin(function (test) {
-    collection.findOne({}, { test: 1 })
-    test.notEqual(afterFindOneUserId, null)
-  }))
+    it('find - userId available to before find hook', function () {
+      collection.find({}, { test: 1 })
+      assert.notEqual(beforeFindUserId, null)
+    })
 
-  InsecureLogin.ready(function () {
-    // Run server tests
-    Meteor.subscribe('test_publish_for_find_findone_userid')
+    it('find - userId available to after find hook', function () {
+      collection.find({}, { test: 1 })
+      assert.notEqual(afterFindUserId, null)
+    })
+
+    it('findone - userId available to before findOne hook', async function () {
+      await collection.findOneAsync({}, { test: 1 })
+      assert.notEqual(beforeFindOneUserId, null)
+    })
+
+    it('findone - userId available to after findOne hook', async function () {
+      await collection.findOneAsync({}, { test: 1 })
+      assert.notEqual(afterFindOneUserId, null)
+    })
   })
 }

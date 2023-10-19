@@ -1,21 +1,44 @@
+/* eslint-env mocha */
+
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 import { InsecureLogin } from './insecure_login'
 
 const collection = new Mongo.Collection('test_remove_allow_collection')
 
 if (Meteor.isServer) {
-  // full client-side access
-  collection.allow({
-    insert () { return true },
-    update () { return true },
-    remove (userId, doc) { return doc.allowed }
-  })
+  const allow = {
+    insert () {
+      return true
+    },
+    update () {
+      return true
+    },
+    remove (userId, doc) {
+      return doc.allowed
+    }
+  }
+
+  if (Meteor.isFibersDisabled) {
+    Object.assign(allow, {
+      insertAsync () {
+        return true
+      },
+      updateAsync () {
+        return true
+      },
+      removeAsync (userId, doc) {
+        return doc.allowed
+      }
+    })
+  }
+
+  collection.allow(allow)
 
   Meteor.methods({
-    test_remove_allow_reset_collection: function () {
-      collection.remove({})
+    test_remove_allow_reset_collection: async function () {
+      await collection.removeAsync({})
     }
   })
 
@@ -27,29 +50,28 @@ if (Meteor.isServer) {
 if (Meteor.isClient) {
   Meteor.subscribe('test_remove_allow_publish_collection')
 
-  Tinytest.addAsync('remove - only one of two collection documents should be allowed to be removed', function (test, next) {
-    collection.before.remove(function (userId, doc) {
-      test.equal(doc.start_value, true)
-    })
-
-    InsecureLogin.ready(function () {
-      Meteor.call('test_remove_allow_reset_collection', function (nil, result) {
-        function start (id1, id2) {
-          collection.remove({ _id: id1 }, function (err1) {
-            collection.remove({ _id: id2 }, function (err2) {
-              test.equal(collection.find({ start_value: true }).count(), 1, 'only one document should remain')
-              next()
-            })
-          })
-        }
-
-        // Insert two documents
-        collection.insert({ start_value: true, allowed: true }, function (err1, id1) {
-          collection.insert({ start_value: true, allowed: false }, function (err2, id2) {
-            start(id1, id2)
-          })
-        })
+  describe('remove - allow', function () {
+    it('remove - only one of two collection documents should be allowed to be removed', function (done) {
+      collection.before[Meteor.isFibersDisabled ? 'removeAsync' : 'remove'](function (userId, doc) {
+        assert.equal(doc.start_value, true)
       })
+
+      function start (id1, id2) {
+        return collection.removeAsync({ _id: id1 })
+          .then(() => collection.removeAsync({ _id: id2 }))
+          .then(() => assert.equal(collection.find({ start_value: true }).countAsync()))
+          .then((count) => {
+            assert.equal(count, 1, 'only one document should remain')
+          })
+      }
+
+      InsecureLogin.ready()
+        .then(() => Meteor.callAsync('test_remove_allow_reset_collection'))
+        .then(() => collection.insertAsync({ start_value: true, allowed: true }))
+        .then(async (id1) => ({ id1, id2: await collection.insertAsync({ start_value: true, allowed: false }) }))
+        .catch(({ id1, id2 }) => start(id1, id2))
+        .then(() => done())
+        .catch(done)
     })
   })
 }

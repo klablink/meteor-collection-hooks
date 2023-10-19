@@ -1,37 +1,41 @@
+/* eslint-env mocha */
+
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 import { CollectionHooks } from 'meteor/matb33:collection-hooks'
 
-Tinytest.addAsync('optional-previous - update hook should not prefetch previous, via hook option param', function (test, next) {
-  const collection = new Mongo.Collection(null)
+describe('optional-previous', function (test) {
+  it('optional-previous - update hook should not prefetch previous, via hook option param', function (done) {
+    const collection = new Mongo.Collection(null)
 
-  collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-    if (doc && doc._id === 'test') {
-      test.equal(!!this.previous, false)
-      next()
-    }
-  }, { fetchPrevious: false })
+    collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+      if (doc && doc._id === 'test') {
+        assert.equal(!!this.previous, false)
+        done()
+      }
+    }, { fetchPrevious: false })
 
-  collection.insert({ _id: 'test', test: 1 }, function () {
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
-  })
-})
-
-Tinytest.addAsync('optional-previous - update hook should not prefetch previous, via collection option param', function (test, next) {
-  const collection = new Mongo.Collection(null)
-
-  collection.hookOptions.after.update = { fetchPrevious: false }
-
-  collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-    if (doc && doc._id === 'test') {
-      test.equal(!!this.previous, false)
-      next()
-    }
+    collection.insertAsync({ _id: 'test', test: 1 })
+      .then(() => collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } }))
+      .catch(done)
   })
 
-  collection.insert({ _id: 'test', test: 1 }, function () {
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
+  it('optional-previous - update hook should not prefetch previous, via collection option param', function (done) {
+    const collection = new Mongo.Collection(null)
+
+    collection.hookOptions.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'] = { fetchPrevious: false }
+
+    collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+      if (doc && doc._id === 'test') {
+        assert.equal(!!this.previous, false)
+        done()
+      }
+    })
+
+    collection.insertAsync({ _id: 'test', test: 1 })
+      .then(() => collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } }))
+      .catch(done)
   })
 })
 
@@ -43,72 +47,73 @@ if (Meteor.isServer) {
   // said, we aren't testing the difference between server and client, as the
   // functionality is the same for either, so testing only the server is
   // acceptable in this case.
+  describe('optional-previous', function (test) {
+    it('optional-previous - update hook should not prefetch previous, via defaults param variation 1: after.update', async function () {
+      const collection = new Mongo.Collection(null)
 
-  Tinytest.add('optional-previous - update hook should not prefetch previous, via defaults param variation 1: after.update', function (test) {
-    const collection = new Mongo.Collection(null)
+      CollectionHooks.defaults.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'] = { fetchPrevious: false }
 
-    CollectionHooks.defaults.after.update = { fetchPrevious: false }
+      collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+        if (options && options.test) {
+          assert.equal(!!this.previous, false)
+        }
+      })
 
-    collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-      if (options && options.test) {
-        test.equal(!!this.previous, false)
-      }
+      CollectionHooks.defaults.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'] = {}
+
+      await collection.insertAsync({ _id: 'test', test: 1 })
+      await collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } })
     })
 
-    CollectionHooks.defaults.after.update = {}
+    it('optional-previous - update hook should not prefetch previous, via defaults param variation 2: after.all', async function () {
+      const collection = new Mongo.Collection(null)
 
-    collection.insert({ _id: 'test', test: 1 })
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
-  })
+      CollectionHooks.defaults.after.all = { fetchPrevious: false }
 
-  Tinytest.add('optional-previous - update hook should not prefetch previous, via defaults param variation 2: after.all', function (test) {
-    const collection = new Mongo.Collection(null)
+      collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+        if (options && options.test) {
+          assert.equal(!!this.previous, false)
+        }
+      })
 
-    CollectionHooks.defaults.after.all = { fetchPrevious: false }
+      CollectionHooks.defaults.after.all = {}
 
-    collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-      if (options && options.test) {
-        test.equal(!!this.previous, false)
-      }
+      await collection.insertAsync({ _id: 'test', test: 1 })
+      await collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } })
     })
 
-    CollectionHooks.defaults.after.all = {}
+    it('optional-previous - update hook should not prefetch previous, via defaults param variation 3: all.update', async function () {
+      const collection = new Mongo.Collection(null)
 
-    collection.insert({ _id: 'test', test: 1 })
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
-  })
+      CollectionHooks.defaults.all.updateAsync = { fetchPrevious: false }
 
-  Tinytest.add('optional-previous - update hook should not prefetch previous, via defaults param variation 3: all.update', function (test) {
-    const collection = new Mongo.Collection(null)
+      collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+        if (options && options.test) {
+          assert.equal(!!this.previous, false)
+        }
+      })
 
-    CollectionHooks.defaults.all.update = { fetchPrevious: false }
+      CollectionHooks.defaults.all.updateAsync = {}
 
-    collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-      if (options && options.test) {
-        test.equal(!!this.previous, false)
-      }
+      await collection.insertAsync({ _id: 'test', test: 1 })
+      await collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } })
     })
 
-    CollectionHooks.defaults.all.update = {}
+    it('optional-previous - update hook should not prefetch previous, via defaults param variation 4: all.all', async function () {
+      const collection = new Mongo.Collection(null)
 
-    collection.insert({ _id: 'test', test: 1 })
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
-  })
+      CollectionHooks.defaults.all.all = { fetchPrevious: false }
 
-  Tinytest.add('optional-previous - update hook should not prefetch previous, via defaults param variation 4: all.all', function (test) {
-    const collection = new Mongo.Collection(null)
+      collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](function (userId, doc, fieldNames, modifier, options) {
+        if (options && options.test) {
+          assert.equal(!!this.previous, false)
+        }
+      })
 
-    CollectionHooks.defaults.all.all = { fetchPrevious: false }
+      CollectionHooks.defaults.all.all = {}
 
-    collection.after.update(function (userId, doc, fieldNames, modifier, options) {
-      if (options && options.test) {
-        test.equal(!!this.previous, false)
-      }
+      await collection.insertAsync({ _id: 'test', test: 1 })
+      await collection.updateAsync({ _id: 'test' }, { $set: { test: 1 } })
     })
-
-    CollectionHooks.defaults.all.all = {}
-
-    collection.insert({ _id: 'test', test: 1 })
-    collection.update({ _id: 'test' }, { $set: { test: 1 } })
   })
 }
