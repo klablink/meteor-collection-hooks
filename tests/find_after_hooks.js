@@ -1,56 +1,64 @@
+/* eslint-env mocha */
+
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
+import { Meteor } from 'meteor/meteor'
 
-Tinytest.addAsync('issue #296 - after update hook always finds all updated', function (test, next) {
-  const collection = new Mongo.Collection(null)
+describe('issue #296', function () {
+  it('issue #296 - after update hook always finds all updated', function (done) {
+    const collection = new Mongo.Collection(null)
 
-  collection.before.find((userId, selector) => {
-    selector.removedAt = { $exists: false }
+    collection.before.find((userId, selector) => {
+      selector.removedAt = { $exists: false }
 
-    return true
+      return true
+    })
+
+    let beforeCalled = false
+    collection.before[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](() => {
+      beforeCalled = true
+    })
+
+    let afterCalled = false
+    collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](() => {
+      afterCalled = true
+    })
+
+    collection.insertAsync({ test: true })
+      .then(() => collection.updateAsync({ test: true }, { $set: { removedAt: new Date() } }))
+      .then(() => {
+        assert.equal(beforeCalled, true)
+        assert.equal(afterCalled, true)
+        done()
+      })
+      .catch(done)
   })
 
-  let beforeCalled = false
-  collection.before.update(() => {
-    beforeCalled = true
-  })
+  it('issue #296 - after insert hook always finds all inserted', function (done) {
+    const collection = new Mongo.Collection(null)
 
-  let afterCalled = false
-  collection.after.update(() => {
-    afterCalled = true
-  })
+    collection.before.find((userId, selector) => {
+      selector.removedAt = { $exists: false }
 
-  const id = collection.insert({ test: true })
+      return true
+    })
 
-  collection.update(id, { $set: { removedAt: new Date() } }, () => {
-    test.equal(beforeCalled, true)
-    test.equal(afterCalled, true)
-    next()
-  })
-})
+    let beforeCalled = false
+    collection.before[Meteor.isFibersDisabled ? 'insertAsync' : 'insert'](() => {
+      beforeCalled = true
+    })
 
-Tinytest.addAsync('issue #296 - after insert hook always finds all inserted', function (test, next) {
-  const collection = new Mongo.Collection(null)
+    let afterCalled = false
+    collection.after[Meteor.isFibersDisabled ? 'insertAsync' : 'insert'](() => {
+      afterCalled = true
+    })
 
-  collection.before.find((userId, selector) => {
-    selector.removedAt = { $exists: false }
-
-    return true
-  })
-
-  let beforeCalled = false
-  collection.before.insert(() => {
-    beforeCalled = true
-  })
-
-  let afterCalled = false
-  collection.after.insert(() => {
-    afterCalled = true
-  })
-
-  collection.insert({ removedAt: new Date() }, () => {
-    test.equal(beforeCalled, true)
-    test.equal(afterCalled, true)
-    next()
+    collection.insertAsync({ removedAt: new Date() })
+      .then(() => {
+        assert.equal(beforeCalled, true)
+        assert.equal(afterCalled, true)
+        done()
+      })
+      .catch(done)
   })
 })

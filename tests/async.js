@@ -1,262 +1,235 @@
+/* eslint-env mocha */
+
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
+import { Meteor } from 'meteor/meteor'
 
 if (Mongo.Collection.prototype.insertAsync) {
   // Before
+  describe('async', function () {
+    it('async - before - insertAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-  Tinytest.addAsync('async - before - insertAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      collection.before[Meteor.isFibersDisabled ? 'insertAsync' : 'insert']((userId, doc) => {
+        doc.called = true
+      })
 
-    collection.before.insert((userId, doc) => {
-      doc.called = true
+      const id = await collection.insertAsync({ test: true })
+
+      assert.isTrue((await collection.findOneAsync(id)).called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - direct - insertAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    test.isTrue((await collection.findOneAsync(id)).called)
+      collection.before[Meteor.isFibersDisabled ? 'insertAsync' : 'insert']((userId, doc) => {
+        doc.called = true
+      })
 
-    next()
-  })
-
-  Tinytest.addAsync('async - direct - insertAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
-
-    collection.before.insert((userId, doc) => {
-      doc.called = true
+      const id = await collection.direct.insertAsync({ test: true })
+      assert.isFalse(!!(await collection.findOneAsync(id)).called)
     })
 
-    const id = await collection.direct.insertAsync({ test: true })
+    it('async - before - findOneAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    test.isFalse((await collection.findOneAsync(id)).called)
+      let called = false
 
-    next()
-  })
+      collection.before[Meteor.isFibersDisabled ? 'findOneAsync' : 'findOne'](() => {
+        called = true
+      })
 
-  Tinytest.addAsync('async - before - findOneAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      const id = await collection.insertAsync({ test: true })
 
-    let called = false
+      await collection.findOneAsync(id)
 
-    collection.before.findOne(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - before - findAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.findOneAsync(id)
+      let called = false
 
-    test.isTrue(called)
+      // eslint-disable-next-line array-callback-return
+      collection.before.find(() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - before - findAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.find(id).fetchAsync()
 
-    let called = false
-
-    // eslint-disable-next-line array-callback-return
-    collection.before.find(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - before - updateAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.find(id).fetchAsync()
+      collection.before[Meteor.isFibersDisabled ? 'updateAsync' : 'update']((userId, doc, fieldNames, modifier) => {
+        modifier.$set.called = true
+      })
 
-    test.isTrue(called)
+      const id = await collection.insertAsync({ test: true })
 
-    next()
-  })
+      await collection.updateAsync(id, { $set: { test: false } })
 
-  Tinytest.addAsync('async - before - updateAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
-
-    collection.before.update((userId, doc, fieldNames, modifier) => {
-      modifier.$set.called = true
+      assert.isTrue((await collection.findOneAsync(id)).called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - direct - updateAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.updateAsync(id, { $set: { test: false } })
+      collection.before[Meteor.isFibersDisabled ? 'updateAsync' : 'update']((userId, doc, fieldNames, modifier) => {
+        modifier.$set.called = true
+      })
 
-    test.isTrue((await collection.findOneAsync(id)).called)
+      const id = await collection.insertAsync({ test: true })
 
-    next()
-  })
+      await collection.direct.updateAsync(id, { $set: { test: false } })
 
-  Tinytest.addAsync('async - direct - updateAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
-
-    collection.before.update((userId, doc, fieldNames, modifier) => {
-      modifier.$set.called = true
+      assert.isFalse(!!(await collection.findOneAsync(id)).called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - before - removeAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.direct.updateAsync(id, { $set: { test: false } })
+      let called = false
 
-    test.isFalse((await collection.findOneAsync(id)).called)
+      collection.before[Meteor.isFibersDisabled ? 'removeAsync' : 'remove'](() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - before - removeAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.removeAsync(id)
 
-    let called = false
-
-    collection.before.remove(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - direct - removeAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.removeAsync(id)
+      let called = false
 
-    test.isTrue(called)
+      collection.before[Meteor.isFibersDisabled ? 'removeAsync' : 'remove'](() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - direct - removeAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.direct.removeAsync(id)
 
-    let called = false
-
-    collection.before.remove(() => {
-      called = true
+      assert.isFalse(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - before - upsertAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.direct.removeAsync(id)
+      let called = false
 
-    test.isFalse(called)
+      collection.before[Meteor.isFibersDisabled ? 'upsertAsync' : 'upsert'](() => {
+        called = true
+      })
 
-    next()
-  })
+      await collection.upsertAsync({ test: true }, { $set: { name: 'Test' } })
 
-  Tinytest.addAsync('async - before - upsertAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
-
-    let called = false
-
-    collection.before.upsert(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    await collection.upsertAsync({ test: true }, { $set: { name: 'Test' } })
+    it('async - direct - upsertAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    test.isTrue(called)
+      let called = false
 
-    next()
-  })
+      collection.before[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](() => {
+        called = true
+      })
 
-  Tinytest.addAsync('async - direct - upsertAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.direct[Meteor.isFibersDisabled ? 'upsertAsync' : 'upsert']({ test: true }, { $set: { name: 'Test' } })
 
-    let called = false
-
-    collection.before.upsert(() => {
-      called = true
+      assert.isFalse(called)
     })
 
-    await collection.direct.upsertAsync({ test: true }, { $set: { name: 'Test' } })
+    // After
 
-    test.isFalse(called)
+    it('async - after - insertAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    next()
-  })
+      let called = false
 
-  // After
+      collection.after[Meteor.isFibersDisabled ? 'insertAsync' : 'insert'](() => {
+        called = true
+      })
 
-  Tinytest.addAsync('async - after - insertAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.insertAsync({ test: true })
 
-    let called = false
-
-    collection.after.insert(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    await collection.insertAsync({ test: true })
+    it('async - after - findOneAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    test.isTrue(called)
+      let called = false
 
-    next()
-  })
+      collection.after[Meteor.isFibersDisabled ? 'findOneAsync' : 'findOne'](() => {
+        called = true
+      })
 
-  Tinytest.addAsync('async - after - findOneAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      const id = await collection.insertAsync({ test: true })
 
-    let called = false
+      await collection.findOneAsync(id)
 
-    collection.after.findOne(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - after - findAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.findOneAsync(id)
+      let called = false
 
-    test.isTrue(called)
+      // eslint-disable-next-line array-callback-return
+      collection.after.find(() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - after - findAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.find(id).fetchAsync()
 
-    let called = false
-
-    // eslint-disable-next-line array-callback-return
-    collection.after.find(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - after - updateAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.find(id).fetchAsync()
+      let called = false
 
-    test.isTrue(called)
+      collection.after[Meteor.isFibersDisabled ? 'updateAsync' : 'update'](() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - after - updateAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.updateAsync(id, { $set: { test: false } })
 
-    let called = false
-
-    collection.after.update(() => {
-      called = true
+      assert.isTrue(called)
     })
 
-    const id = await collection.insertAsync({ test: true })
+    it('async - after - removeAsync', async () => {
+      const collection = new Mongo.Collection(null)
 
-    await collection.updateAsync(id, { $set: { test: false } })
+      let called = false
 
-    test.isTrue(called)
+      collection.after[Meteor.isFibersDisabled ? 'removeAsync' : 'remove'](() => {
+        called = true
+      })
 
-    next()
-  })
+      const id = await collection.insertAsync({ test: true })
 
-  Tinytest.addAsync('async - after - removeAsync', async (test, next) => {
-    const collection = new Mongo.Collection(null)
+      await collection.removeAsync(id)
 
-    let called = false
-
-    collection.after.remove(() => {
-      called = true
+      assert.isTrue(called)
     })
-
-    const id = await collection.insertAsync({ test: true })
-
-    await collection.removeAsync(id)
-
-    test.isTrue(called)
-
-    next()
   })
 }

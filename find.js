@@ -1,30 +1,59 @@
-import { CollectionHooks } from './collection-hooks'
+import { CollectionHooks } from './collection-hooks';
 
-CollectionHooks.defineAdvice('find', function (userId, _super, instance, aspects, getTransform, args, suppressAspects) {
-  const ctx = { context: this, _super, args }
-  const selector = CollectionHooks.normalizeSelector(instance._getFindSelector(args))
-  const options = instance._getFindOptions(args)
-  let abort
+function callOnce(fn) {
+  let called = false;
+  return function () {
+    if (called) {
+      return;
+    }
+    called = true;
+    return fn.apply(this, arguments);
+  };
+}
+
+const errorFindAsync = callOnce(() => {
+  console.error('Collection hooks warning: You are using a asynchronous find hook.');
+});
+
+const findFn = function (userId, _super, instance, aspects, getTransform, args, suppressAspects) {
+  const ctx = {
+    context: this,
+    _super,
+    args
+  };
+  const selector = CollectionHooks.normalizeSelector(instance._getFindSelector(args));
+  const options = instance._getFindOptions(args);
+  let abort;
   // before
   if (!suppressAspects) {
     aspects.before.forEach((o) => {
-      const r = o.aspect.call(ctx, userId, selector, options)
-      if (r === false) abort = true
-    })
+      let r = o.aspect.call(ctx, userId, selector, options);
+      if (r && r.then && r.catch && typeof r.then === 'function' && typeof r.catch === 'function') {
+        errorFindAsync();
+      }
+      r = CollectionHooks.normalizeResult(r);
+      if (r === false) {
+        abort = true;
+      }
+    });
 
-    if (abort) return instance.direct.find(undefined)
+    if (abort) {
+      return instance.find(undefined);
+    }
   }
 
   const after = (cursor) => {
     if (!suppressAspects) {
       aspects.after.forEach((o) => {
-        o.aspect.call(ctx, userId, selector, options, cursor)
-      })
+        CollectionHooks.normalizeResult(o.aspect.call(ctx, userId, selector, options, cursor));
+      });
     }
-  }
+  };
 
-  const ret = _super.call(this, selector, options)
-  after(ret)
+  const ret = _super.call(this, selector, options);
+  after(ret);
 
-  return ret
-})
+  return ret;
+};
+
+CollectionHooks.defineAdvice('find', findFn)

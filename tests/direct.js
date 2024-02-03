@@ -1,13 +1,16 @@
+/* eslint-env mocha */
+
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest';
+import { assert } from 'chai'
+import { repeat } from './helpers'
 
 // XXX: Code below throws
 // TypeError: Cannot read property '#<Object>' of undefined
 // No idea why...
 
 // ([null, 'direct_collection_test']).forEach(function (ctype) {
-//   Tinytest.add(`direct - hooks should not be fired when using .direct (collection type ${ctype})`, function (test) {
+//   Tinyassert.add(`direct - hooks should not be fired when using .direct (collection type ${ctype})`, function (test) {
 //     // console.log('-------', ctype)
 
 //     const collection = new Mongo.Collection(ctype, {connection: null})
@@ -100,7 +103,7 @@ import { Tinytest } from 'meteor/tinytest';
 //     collection.findOne({}, {test: 1})
 //     collection.remove({_id: 'test'})
 
-//     test.equal(hookCount, hookCountTarget)
+//     assert.equal(hookCount, hookCountTarget)
 
 //     // These should in no way affect the hookCount, which is essential in proving
 //     // that the direct calls are functioning as intended
@@ -110,51 +113,147 @@ import { Tinytest } from 'meteor/tinytest';
 
 //     const cursor = collection.direct.find({}, {test: 1})
 //     const count = cursor.count()
-//     test.equal(count, 1)
+//     assert.equal(count, 1)
 
 //     const doc = collection.direct.findOne({}, {test: 1})
-//     test.equal(doc.test, 1)
+//     assert.equal(doc.test, 1)
 
 //     collection.direct.remove({_id: 'test'})
 
-//     test.equal(hookCount, hookCountTarget)
+//     assert.equal(hookCount, hookCountTarget)
 //   })
 // })
 
-[{}, { connection: null }].forEach(function (conntype, i) {
-  [null, 'direct_collection_test_stringid'].forEach(function (ctype) {
-    const cname = ctype && (ctype + i)
-    Tinytest.add(`direct - update and remove should allow removing by _id string (${cname}, ${JSON.stringify(conntype)})`, function (test) {
-      const collection = new Mongo.Collection(cname, conntype)
+describe('direct', function () {
+  [{}, { connection: null }].forEach(function (conntype, i) {
+    [null, 'direct_collection_test_stringid'].forEach(function (ctype) {
+      const cname = ctype && (ctype + i)
+      it(`direct - update and remove should allow removing by _id string (${cname}, ${JSON.stringify(conntype)})`, function (done) {
+        if (Meteor.isClient) {
+          console.log('direct - update and remove should allow removing by _id string', cname, JSON.stringify(conntype))
+        }
 
-      // Full permissions on collection
-      collection.allow({
-        insert: function () { return true },
-        update: function () { return true },
-        remove: function () { return true }
+        const collection = new Mongo.Collection(cname, conntype)
+
+        const allow = {
+          insert: function () {
+            return true
+          },
+          update: function () {
+            return true
+          },
+          remove: function () {
+            return true
+          }
+        }
+
+        if (Meteor.isFibersDisabled) {
+          Object.assign(allow,
+            {
+              insertAsync: function () {
+                return true
+              },
+              updateAsync: function () {
+                return true
+              },
+              removeAsync: function () {
+                return true
+              }
+            })
+        }
+
+        // Full permissions on collection
+        collection.allow(allow)
+
+        async function hasCountAndTestValue (count, value, msg) {
+          const actual = await repeat(async () => {
+            const actual = await collection.direct.find({ _id: 'testid', test: value }).countAsync()
+            if (actual === count) return actual
+          }, 20)
+          assert.equal(actual, count, `${msg} count should be ${count} but, it is ${actual}`)
+        }
+
+        if (Meteor.isServer) {
+          collection.direct.removeAsync({ _id: 'testid' })
+            .then(() => collection.direct.insertAsync({ _id: 'testid', test: 1 }))
+            .then(() => hasCountAndTestValue(1, 1, 'insert'))
+            .then(() => collection.direct.updateAsync('testid', { $set: { test: 2 } }))
+            .then(() => hasCountAndTestValue(1, 2, 'update'))
+            .then(() => collection.direct.removeAsync('testid'))
+            .then(() => hasCountAndTestValue(0, 2, 'remove'))
+            .then(() => done())
+            .catch(done)
+        } else {
+          collection.direct.removeAsync({ _id: 'testid' })
+            .then(() => collection.direct.insertAsync({ _id: 'testid', test: 1 }).stubPromise)
+            .then(() => hasCountAndTestValue(1, 1, 'insert'))
+            .then(() => collection.direct.updateAsync('testid', { $set: { test: 2 } }).stubPromise)
+            .then(() => hasCountAndTestValue(1, 2, 'update'))
+            .then(() => collection.direct.removeAsync('testid').stubPromise)
+            .then(() => hasCountAndTestValue(0, 2, 'remove'))
+            .then(() => done())
+            .catch(done)
+        }
       })
-
-      function hasCountAndTestValue (count, value) {
-        const cursor = collection.direct.find({ _id: 'testid', test: value })
-        test.equal(cursor.count(), count)
-      }
-
-      collection.direct.remove({ _id: 'testid' })
-      collection.direct.insert({ _id: 'testid', test: 1 })
-      hasCountAndTestValue(1, 1)
-      collection.direct.update('testid', { $set: { test: 2 } })
-      hasCountAndTestValue(1, 2)
-      collection.direct.remove('testid')
-      hasCountAndTestValue(0, 2)
     })
   })
-})
 
-if (Meteor.isServer) {
-  Tinytest.add('direct - Meteor.users.direct.insert should return _id, not an object', function (test) {
-    Meteor.users.remove('directinserttestid')
+  it('Test find direct', function (done) {
+    const coll = new Mongo.Collection('test_find', { connection: null })
+    const cursorDirect = coll.direct.find()
 
-    const result = Meteor.users.direct.insert({ _id: 'directinserttestid', test: 1 })
-    test.isFalse(Object(result) === result)
+    assert.isFalse(cursorDirect && typeof cursorDirect.then === 'function')
+    assert.isNumber(cursorDirect.count())
+
+    const cursor = coll.find()
+    assert.isFalse(cursorDirect && typeof cursorDirect.then === 'function')
+    assert.isNumber(cursor.count())
+    cursor.countAsync()
+      .then((count) => {
+        assert.isNumber(count)
+        assert.equal(count, 0)
+      })
+      .then(() => done())
+      .catch(done)
   })
-}
+
+  it('Test update direct', function (done) {
+    const coll = new Mongo.Collection('test_find', { connection: null })
+
+    coll.before.find(() => {
+      throw new Error('before find should not be called')
+    })
+
+    coll.direct.insertAsync({ test: true })
+      .then((id) => coll.direct.updateAsync({ test: true }, { $set: { test: false } }))
+      .then(() => done())
+      .catch(done)
+  })
+
+  if (Meteor.isFibersDisabled && Meteor.isClient) {
+    it('Test prosimes returned from a direct call', function (done) {
+      const coll = new Mongo.Collection('test_promises')
+
+      const res = coll.direct.insertAsync({ test: true })
+      assert.equal(typeof res, 'object')
+      assert.isFunction(res.then)
+      assert.isFunction(res.catch)
+      assert.equal(typeof res.stubPromise, 'object')
+      assert.isFunction(res.stubPromise.then)
+      assert.isFunction(res.stubPromise.catch)
+      done()
+    })
+  }
+
+  if (Meteor.isServer) {
+    it('direct - Meteor.users.direct.insert should return _id, not an object', function (done) {
+      Meteor.users.removeAsync('directinserttestid')
+        .then(() => Meteor.users.direct.insertAsync({ _id: 'directinserttestid', test: 1 }))
+        .then((result) => {
+          assert.isFalse(Object(result) === result)
+          done()
+        })
+        .catch(done)
+    })
+  }
+})

@@ -3,16 +3,17 @@
 export const InsecureLogin = {
   queue: [],
   ran: false,
-  ready: function (callback) {
-    this.queue.push(callback)
-    if (this.ran) this.unwind()
+  async ready (callback) {
+    return new Promise((resolve) => {
+      const tmr = setInterval(() => {
+        if (this.ran) {
+          clearInterval(tmr)
+          resolve()
+        }
+      })
+    }, 2)
   },
-  run: function () {
+  async run () {
     this.ran = true
-    this.unwind()
-  },
-  unwind: function () {
-    this.queue.forEach(cb => cb())
-    this.queue = []
   }
 }

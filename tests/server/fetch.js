@@ -1,8 +1,8 @@
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 import { InsecureLogin } from '../insecure_login'
 
-Tinytest.addAsync('general - local collection documents should only have fetched fields', function (test, next) {
+it('general - local collection documents should only have fetched fields', function (done) {
   const collection = new Mongo.Collection(null)
 
   function same (arr1, arr2) {
@@ -14,8 +14,8 @@ Tinytest.addAsync('general - local collection documents should only have fetched
 
     collection.after.update(function (userId, doc, fieldNames, modifier) {
       const { _id, ...docKeys } = Object.keys(doc)
-      test.equal(same(docKeys, fields), true)
-      next()
+      assert.equal(same(docKeys, fields), true)
+      done()
     }, {
       fetch: fields
     })

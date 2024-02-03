@@ -2,8 +2,23 @@ import { Meteor } from 'meteor/meteor'
 import { CollectionHooks } from './collection-hooks'
 
 import './advices'
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-const publishUserId = new Meteor.EnvironmentVariable()
+class EnvironmentVariable {
+  constructor() {
+    this.context = new AsyncLocalStorage();
+  }
+
+  get() {
+    return this.context.getStore();
+  }
+
+  withValue(value, fn) {
+    return this.context.run(value, () => fn());
+  }
+}
+
+const publishUserId = new EnvironmentVariable()
 
 CollectionHooks.getUserId = function getUserId () {
   let userId

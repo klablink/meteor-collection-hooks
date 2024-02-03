@@ -9,13 +9,71 @@ import { LocalCollection } from 'meteor/minimongo'
 // Pointcut: before/after
 const advices = {}
 
+let EnvironmentVariable
+if(Meteor.isServer) {
+  const { AsyncLocalStorage } = require('node:async_hooks');
+
+  EnvironmentVariable = class EnvironmentVariable {
+    constructor() {
+      this.context = new AsyncLocalStorage();
+    }
+
+    get() {
+      return this.context.getStore();
+    }
+
+    withValue(value, fn) {
+      return this.context.run(value, () => fn());
+    }
+  }
+} else {
+  EnvironmentVariable = Meteor.EnvironmentVariable
+}
+
 export const CollectionHooks = {
   defaults: {
-    before: { insert: {}, update: {}, remove: {}, upsert: {}, find: {}, findOne: {}, all: {} },
-    after: { insert: {}, update: {}, remove: {}, find: {}, findOne: {}, all: {} },
-    all: { insert: {}, update: {}, remove: {}, find: {}, findOne: {}, all: {} }
+    before: {
+      insert: {},
+      update: {},
+      remove: {},
+      upsert: {},
+      insertAsync: {},
+      updateAsync: {},
+      removeAsync: {},
+      upsertAsync: {},
+      find: {},
+      findOne: {},
+      findOneAsync: {},
+      all: {}
+    },
+    after: {
+      insert: {},
+      update: {},
+      remove: {},
+      find: {},
+      findOne: {},
+      insertAsync: {},
+      updateAsync: {},
+      removeAsync: {},
+      upsertAsync: {},
+      findOneAsync: {},
+      all: {}
+    },
+    all: {
+      insert: {},
+      update: {},
+      remove: {},
+      find: {},
+      findOne: {},
+      insertAsync: {},
+      updateAsync: {},
+      removeAsync: {},
+      upsertAsync: {},
+      findOneAsync: {},
+      all: {}
+    }
   },
-  directEnv: new Meteor.EnvironmentVariable(),
+  directEnv: new EnvironmentVariable(),
   directOp (func) {
     return this.directEnv.withValue(true, func)
   },
@@ -29,7 +87,7 @@ CollectionHooks.extendCollectionInstance = function extendCollectionInstance (se
   // Example: collection.before.insert(func);
   ['before', 'after'].forEach(function (pointcut) {
     Object.entries(advices).forEach(function ([method, advice]) {
-      if (advice === 'upsert' && pointcut === 'after') return
+      if (['upsert', 'upsertAsync'].includes(advice) && pointcut === 'after') return
 
       Meteor._ensure(self, pointcut, method)
       Meteor._ensure(self, '_hookAspects', method)
@@ -76,25 +134,34 @@ CollectionHooks.extendCollectionInstance = function extendCollectionInstance (se
 
   // Wrap mutator methods, letting the defined advice do the work
   Object.entries(advices).forEach(function ([method, advice]) {
-    const collection = Meteor.isClient || method === 'upsert' ? self : self._collection
+    const isAsync = method.endsWith('Async')
+    const collection = Meteor.isClient || ['upsert', 'upsertAsync'].includes(method) ? self : self._collection
 
     // Store a reference to the original mutator method
     const _super = collection[method]
 
     Meteor._ensure(self, 'direct', method)
     self.direct[method] = function (...args) {
-      return CollectionHooks.directOp(function () {
-        return constructor.prototype[method].apply(self, args)
-      })
+      if (method === 'find') {
+        return _super.apply(collection, args)
+      } else {
+        const res = CollectionHooks.directOp(function () {
+          return constructor.prototype[method].apply(self, args)
+        })
+
+        return isAsync && !Meteor.isFibersDisabled ? Promise.resolve(res) : res
+      }
     }
 
     const asyncMethod = method + 'Async'
 
     if (constructor.prototype[asyncMethod]) {
       self.direct[asyncMethod] = function (...args) {
-        return CollectionHooks.directOp(function () {
+        const res = CollectionHooks.directOp(function () {
           return constructor.prototype[asyncMethod].apply(self, args)
         })
+
+        return !Meteor.isFibersDisabled ? Promise.resolve(res) : res
       }
     }
 
@@ -113,22 +180,37 @@ CollectionHooks.extendCollectionInstance = function extendCollectionInstance (se
       //   advice = CollectionHooks.getAdvice(method);
       // }
 
+      const getHooks = (method) => {
+        if (['upsert', 'upsertAsync'].includes(method)) {
+          return {
+            insert: self._hookAspects.insert || {},
+            update: self._hookAspects.update || {},
+            upsert: self._hookAspects.upsert || {},
+            remove: self._hookAspects.remove || {},
+            insertAsync: self._hookAspects.insertAsync || {},
+            updateAsync: self._hookAspects.updateAsync || {},
+            upsertAsync: self._hookAspects.upsertAsync || {},
+            removeAsync: self._hookAspects.removeAsync || {}
+          }
+        } else {
+          return self._hookAspects[method] || {}
+        }
+      }
+
       return advice.call(this,
         CollectionHooks.getUserId(),
         _super,
         self,
-        method === 'upsert'
-          ? {
-              insert: self._hookAspects.insert || {},
-              update: self._hookAspects.update || {},
-              upsert: self._hookAspects.upsert || {}
-            }
-          : self._hookAspects[method] || {},
+        getHooks(method),
         function (doc) {
           return (
             typeof self._transform === 'function'
-              ? function (d) { return self._transform(d || doc) }
-              : function (d) { return d || doc }
+              ? function (d) {
+                return self._transform(d || doc)
+              }
+              : function (d) {
+                return d || doc
+              }
           )
         },
         args,
@@ -225,7 +307,7 @@ CollectionHooks.getFields = function getFields (mutator) {
   Object.entries(mutator).forEach(function ([op, params]) {
     // ====ADDED START=======================
     if (operators.includes(op)) {
-    // ====ADDED END=========================
+      // ====ADDED END=========================
       Object.keys(params).forEach(function (field) {
         // treat dotted fields as if they are replacing their
         // top-level part
@@ -289,6 +371,15 @@ CollectionHooks.wrapCollection = function wrapCollection (ns, as) {
 }
 
 CollectionHooks.modify = LocalCollection._modify
+
+CollectionHooks.normalizeResult = function (r) {
+  if (r && typeof r.then === 'function') {
+    if (Meteor.isClient) {
+      throw new Error('insert hook must be synchronous. Use insertAsync instead.')
+    }
+  }
+  return r
+}
 
 if (typeof Mongo !== 'undefined') {
   CollectionHooks.wrapCollection(Meteor, Mongo)

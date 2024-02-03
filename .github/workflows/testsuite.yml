@@ -1,9 +1,11 @@
 # the test suite runs the tests (headless, server+client) for multiple Meteor releases
 name: Test suite
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
+      - develop
   pull_request:
 
 jobs:
@@ -11,11 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        meteorRelease:
-          - '--release 2.3'
-          - '--release 2.8.1'
-          - '--release 2.14'
-          # Latest version
+        meteorRelease: ['3.0-beta.0']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,10 +23,19 @@ jobs:
         with:
           node-version: '20.x'
 
-      - name: Install Dependencies
+      - name: Setup Meteor
+        uses: meteorengineer/setup-meteor@v1
+        with:
+          meteor-release: ${{ matrix.meteorRelease }}
+
+      - name: Setup tests
         run: |
-          curl https://install.meteor.com | /bin/sh
-          npm i -g @zodern/mtest
-      - name: Run Tests
+          meteor create --release ${{ matrix.meteorRelease }} --bare test
+          cd test
+          meteor npm i --save puppeteer@1.18.1 chai
+
+      - name: Test
+        working-directory: ./test
         run: |
-          mtest --package ./ --once ${{ matrix.meteorRelease }}
+          meteor --version
+          METEOR_PACKAGE_DIRS="../" TEST_BROWSER_DRIVER=puppeteer meteor test-packages --raw-logs --once --driver-package meteortesting:mocha ../

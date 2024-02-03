@@ -1,21 +1,47 @@
+/* eslint-env mocha */
+
 import { Meteor } from 'meteor/meteor'
 import { Mongo } from 'meteor/mongo'
-import { Tinytest } from 'meteor/tinytest'
+import { assert } from 'chai'
 import { InsecureLogin } from './insecure_login'
+import { repeat } from './helpers'
 
 const collection = new Mongo.Collection('test_insert_allow_collection')
 
 if (Meteor.isServer) {
   // full client-side access
-  collection.allow({
-    insert (userId, doc) { return doc.allowed },
-    update () { return true },
-    remove () { return true }
-  })
+  // full client-side access
+  const allow = {
+    insert (userId, doc) {
+      return doc.allowed
+    },
+    update () {
+      return true
+    },
+    remove () {
+      return true
+    }
+  }
+
+  if (Meteor.isFibersDisabled) {
+    Object.assign(allow, {
+      insertAsync (userId, doc) {
+        return doc.allowed
+      },
+      updateAsync () {
+        return true
+      },
+      removeAsync () {
+        return true
+      }
+    })
+  }
+
+  collection.allow(allow)
 
   Meteor.methods({
-    test_insert_allow_reset_collection: function () {
-      collection.remove({})
+    test_insert_allow_reset_collection: async function () {
+      await collection.removeAsync({})
     }
   })
 
@@ -23,7 +49,7 @@ if (Meteor.isServer) {
     return collection.find()
   })
 
-  collection.before.insert(function (userId, doc) {
+  collection.before[Meteor.isFibersDisabled ? 'insertAsync' : 'insert'](function (userId, doc) {
     doc.server_value = true
   })
 }
@@ -31,20 +57,45 @@ if (Meteor.isServer) {
 if (Meteor.isClient) {
   Meteor.subscribe('test_insert_allow_publish_collection')
 
-  Tinytest.addAsync('insert - only one of two collection documents should be allowed to be inserted, and should carry the extra server and client properties', function (test, next) {
-    collection.before.insert(function (userId, doc) {
-      doc.client_value = true
-    })
+  describe('insert', function () {
+    it('insert - only one of two collection documents should be allowed to be inserted, and should carry the extra server and client properties', function (done) {
+      collection.before[Meteor.isFibersDisabled ? 'insertAsync' : 'insert'](function (userId, doc) {
+        doc.client_value = true
+      })
 
-    InsecureLogin.ready(function () {
-      Meteor.call('test_insert_allow_reset_collection', function (nil, result) {
-        collection.insert({ start_value: true, allowed: false }, function (err1, id1) {
-          collection.insert({ start_value: true, allowed: true }, function (err2, id2) {
-            test.equal(collection.find({ start_value: true, client_value: true, server_value: true }).count(), 1)
-            next()
+      InsecureLogin.ready()
+        .then(() => Meteor.callAsync('test_insert_allow_reset_collection'))
+        .then(() => collection.insertAsync({ start_value: true, allowed: false }))
+        .then(() => {
+          return repeat(async () => {
+            const count = await collection.find({
+              start_value: true, client_value: true, server_value: true
+            }).countAsync()
+            if (count === 0) {
+              return count
+            }
           })
         })
-      })
+        .then(() => collection.insertAsync({ start_value: true, allowed: true }))
+        .catch(() => collection.insertAsync({ start_value: true, allowed: true }))
+        .then(() => {
+          return repeat(async () => {
+            const count = await collection.find({
+              start_value: true, client_value: true, server_value: true
+            }).countAsync()
+            if (count === 1) {
+              return count
+            }
+          })
+        })
+        .then((count) => {
+          assert.equal(count, 1)
+          done()
+        })
+        .catch((err) => {
+          // assert.fail('insert - only one of two collection documents should be allowed to be inserted, and should carry the extra server and client properties ' + err.message)
+          done(err)
+        })
     })
   })
 }
