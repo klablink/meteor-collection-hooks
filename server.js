@@ -19,6 +19,7 @@ class EnvironmentVariable {
 }
 
 const publishUserId = new EnvironmentVariable()
+// const publishUserId = new Meteor.EnvironmentVariable()
 
 CollectionHooks.getUserId = function getUserId () {
   let userId

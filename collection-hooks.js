@@ -74,6 +74,7 @@ export const CollectionHooks = {
     }
   },
   directEnv: new EnvironmentVariable(),
+  // directEnv: new Meteor.EnvironmentVariable(),
   directOp (func) {
     return this.directEnv.withValue(true, func)
   },
